@@ -1,0 +1,96 @@
+package io.split.dbm.integrations.mixpanel;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
+import java.nio.charset.Charset;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+
+import org.apache.commons.codec.binary.Base64;
+import org.apache.commons.io.IOUtils;
+
+import com.amazonaws.services.lambda.runtime.Context;
+import com.amazonaws.services.lambda.runtime.LambdaLogger;
+import com.amazonaws.services.lambda.runtime.RequestStreamHandler;
+import com.google.gson.Gson;
+import com.squareup.okhttp.MediaType;
+import com.squareup.okhttp.OkHttpClient;
+import com.squareup.okhttp.Request;
+import com.squareup.okhttp.RequestBody;
+
+public class SplitImpressions2MixPanelEvents implements RequestStreamHandler {
+
+    @Override
+    public void handleRequest(InputStream input, OutputStream output, Context context) throws IOException {
+        LambdaLogger logger = context.getLogger();
+		String json = IOUtils.toString(input, Charset.forName("UTF-8"));
+		logger.log("input: " + json);
+		Impression[] impressions = new Gson().fromJson(json, Impression[].class);
+        logger.log("logged " + impressions.length + " impressions");
+        
+		List<MixPanelEvent> events = new LinkedList<MixPanelEvent>();
+        for(Impression impression : impressions) {
+        	logger.log("output: " + impression.toJson());
+        	MixPanelEvent event = new MixPanelEvent();
+        	event.event = "split_evaluation";
+        	event.properties = new HashMap<String, Object>();
+        	event.properties.put("split", impression.split);
+        	event.properties.put("distinct_id", impression.key);
+        	event.properties.put("token", "9add192c319da91127787dfa1065dfa6");
+        	event.properties.put("time", impression.time / 1000);
+        	event.properties.put("treatment", impression.treatment);
+        	event.properties.put("label", impression.label);
+        	event.properties.put("environmentId", impression.environmentId);
+        	event.properties.put("environmentName", impression.environmentName);  
+        	events.add(event);
+        }
+        String rawJson = new Gson().toJson(events);
+        logger.log("raw mixpanel events JSON below");
+        logger.log(rawJson);
+        logger.log("raw mixpanel events JSON above");
+        Base64 base64 = new Base64();
+        String encodedJson = new String(base64.encode(rawJson.getBytes()));
+        String body = "data=" + encodedJson;
+        MediaType JSON = MediaType.parse("application/json; charset=utf-8");
+        RequestBody requestBody = RequestBody.create(JSON, body);
+        
+        OkHttpClient client = new OkHttpClient();
+        Request request = new Request.Builder()
+        		.url("http://api.mixpanel.com/track/")
+        		.post(requestBody)
+        		.build();
+        
+        client.newCall(request).execute();
+        
+    	PrintWriter writer = new PrintWriter(new OutputStreamWriter(output));
+    	writer.println("" + impressions.length + " accepted");
+    	writer.flush();
+    	writer.close();
+    }
+
+    class MixPanelEvent {
+    	String event;
+    	Map<String, Object> properties;
+    	
+		public String getEvent() {
+			return event;
+		}
+		public void setEvent(String event) {
+			this.event = event;
+		}
+		public Map<String, Object> getProperties() {
+			return properties;
+		}
+		public void setProperties(Map<String, Object> properties) {
+			this.properties = properties;
+		}
+    	
+    	
+    }
+    
+}
