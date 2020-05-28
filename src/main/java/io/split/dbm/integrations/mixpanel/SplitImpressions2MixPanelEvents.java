@@ -25,14 +25,19 @@ import com.squareup.okhttp.RequestBody;
 
 public class SplitImpressions2MixPanelEvents implements RequestStreamHandler {
 
+    OkHttpClient client;
+    
     @Override
     public void handleRequest(InputStream input, OutputStream output, Context context) throws IOException {
+    	long start = System.currentTimeMillis();
         LambdaLogger logger = context.getLogger();
 		String json = IOUtils.toString(input, Charset.forName("UTF-8"));
 		logger.log("input: " + json);
+		long startParse = System.currentTimeMillis();
 		Impression[] impressions = new Gson().fromJson(json, Impression[].class);
-        logger.log("logged " + impressions.length + " impressions");
+        logger.log("parsed " + impressions.length + " impressions in " + (System.currentTimeMillis() - startParse) + "ms");
         
+        long startMixPanel = System.currentTimeMillis();
 		List<MixPanelEvent> events = new LinkedList<MixPanelEvent>();
         for(Impression impression : impressions) {
         	logger.log("output: " + impression.toJson());
@@ -46,31 +51,37 @@ public class SplitImpressions2MixPanelEvents implements RequestStreamHandler {
         	event.properties.put("treatment", impression.treatment);
         	event.properties.put("label", impression.label);
         	event.properties.put("environmentId", impression.environmentId);
-        	event.properties.put("environmentName", impression.environmentName);  
+        	event.properties.put("environmentName", impression.environmentName);
+        	event.properties.put("sdk", impression.sdk);
+        	event.properties.put("sdkVersion", impression.sdkVersion);
+        	event.properties.put("splitVersionNumber", impression.splitVersionNumber);
         	events.add(event);
         }
         String rawJson = new Gson().toJson(events);
-        logger.log("raw mixpanel events JSON below");
-        logger.log(rawJson);
-        logger.log("raw mixpanel events JSON above");
         Base64 base64 = new Base64();
         String encodedJson = new String(base64.encode(rawJson.getBytes()));
         String body = "data=" + encodedJson;
         MediaType JSON = MediaType.parse("application/json; charset=utf-8");
         RequestBody requestBody = RequestBody.create(JSON, body);
+        logger.log("encoded MixPanel events in " + (System.currentTimeMillis() - startMixPanel) + "ms");
         
-        OkHttpClient client = new OkHttpClient();
+        long startPost = System.currentTimeMillis();
+        if (client == null) {
+        	client = new OkHttpClient();
+        }
         Request request = new Request.Builder()
         		.url("http://api.mixpanel.com/track/")
         		.post(requestBody)
         		.build();
         
         client.newCall(request).execute();
+        logger.log("POSTed MixPanel events in " + (System.currentTimeMillis() - startPost) + "ms");
         
     	PrintWriter writer = new PrintWriter(new OutputStreamWriter(output));
-    	writer.println("" + impressions.length + " accepted");
+    	writer.println("" + impressions.length + " impressions accepted and posted to MixPanel");
     	writer.flush();
     	writer.close();
+    	logger.log("finished in " + (System.currentTimeMillis() - start) + "ms");
     }
 
     class MixPanelEvent {
