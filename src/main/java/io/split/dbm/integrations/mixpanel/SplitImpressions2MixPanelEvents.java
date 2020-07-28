@@ -42,11 +42,15 @@ public class SplitImpressions2MixPanelEvents implements RequestStreamHandler {
         for(Impression impression : impressions) {
         	logger.log("output: " + impression.toJson());
         	MixPanelEvent event = new MixPanelEvent();
-        	event.event = "split_evaluation";
+        	event.event = "$experiment_started";
         	event.properties = new HashMap<String, Object>();
+        	event.properties.put("Experiment name", impression.split);
+        	event.properties.put("Variant name", impression.treatment);
+        	event.properties.put("$source", "Split");
+        	
         	event.properties.put("split", impression.split);
         	event.properties.put("distinct_id", impression.key);
-        	event.properties.put("token", "9add192c319da91127787dfa1065dfa6");
+        	event.properties.put("token", YOUR_MIXPANEL_TOKEN_HERE);
         	event.properties.put("time", impression.time / 1000);
         	event.properties.put("treatment", impression.treatment);
         	event.properties.put("label", impression.label);
